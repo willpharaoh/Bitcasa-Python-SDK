@@ -146,30 +146,20 @@ class Bitcasa:
 
 	## Add Folder
 	def mkdir (self, path, folder_name):
+		if(self.debug):
+			print("[Bitcasa] Creating Directory Named: " + folder_name + " in Path: " + path)
 		payload = {'folder_name' : folder_name}
-		r = requests.post(self.api_url + "/folders/" + path + "?access_token=" + self.access_token, data=payload)
+		if(self.debug):
+			print("[Network] Request: " + self.bitcasa_api_url + "/folders/" + path + "?access_token=" + self.api_access_token)
+		r = requests.post(self.bitcasa_api_url + "/folders/" + path + "?access_token=" + self.api_access_token, data=payload)
 		if(r.status_code == 200):
 			# Make Sure Errors aren't here
 			if(r.json()['error'] == None):
-				# Check to see if this folder was Existing
-				if(r.json()['result']['items'][0]['status'] == "existing"):
-					raise Exception(409, "This folder already exists. Please choose another name and try again.")
-				# Success
-				return r.json()['result']['items'][0]
+				return r.json()['result']['items']
 			else:
-				if(r.json()['error']['code'] == 2022):
-					raise Exception(2022, r.json()['error']['message'])
-				elif(r.json()['error']['code'] == 2023):
-					raise Exception(2023, r.json()['error']['message'])
-				else:
-					# Other Error
-					raise Exception("A strange error has occurred. Derp.")
+				raise Exception(r.json()['error']['code'], r.json()['error']['message'])
 		else:
-			if(r.json()['error'] != None):
-				raise Exception(r.json['error']['code'], r.json['error']['message'])
-			else:
-				# Other Error
-				raise Exception("A strange error has occurred. Derp.")
+			raise Exception(r.json['error']['code'], r.json['error']['message'])
 
 	## Remove Folder
 	def rmdir(self, path):
