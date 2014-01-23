@@ -181,27 +181,21 @@ class Bitcasa:
 
 	## Rename Folder
 	def renamedir(self, path, new_name):
+		if(self.debug):
+			print("[Bitcasa] Renaming Directory With Path: " + path + " To: " + new_name)
 		payload = {'from' : path, 'filename': new_name}
-		r = requests.post(self.api_url + "/folders?operation=rename&access_token=" + self.access_token, data=payload)
+		if(self.debug):
+			print("[Network] Request: " + self.bitcasa_api_url + "/folders?operation=rename&access_token=" + self.api_access_token)
+		r = requests.post(self.bitcasa_api_url + "/folders?operation=rename&access_token=" + self.api_access_token, data=payload)
 		if(r.status_code == 200):
 			if(r.json()['error'] == None):
 				# Success
 				# @todo - If it doesn't delete anything (if not found) it will still return a success.
-				return True
+				return r.json()['result']
 			else:
-				if(r.json()['error']['code'] == 2022):
-					raise Exception(2022, r.json()['error']['message'])
-				elif(r.json()['error']['code'] == 2023):
-					raise Exception(2023, r.json()['error']['message'])
-				else:
-					# Other Error
-					raise Exception("A strange error has occurred. Derp.")
-		else:
-			if(r.json()['error'] != None):
 				raise Exception(r.json()['error']['code'], r.json()['error']['message'])
-			else:
-				# Other Error
-				raise Exception("A strange error has occurred. Derp.")
+		else:
+			raise Exception(r.json['error']['code'], r.json['error']['message'])
 
 	## Move Folder
 	def mvdir(self, path, new_path):
