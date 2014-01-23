@@ -17,7 +17,8 @@ import codecs, mimetypes, sys, uuid
 # Bitcasa Uploader Class
 # Works great for now, but Upload API changes soon.
 class BitcasaUploader(object):
-	def __init__(self, filename, chunksize=1 << 13):
+	def __init__(self, file_obj, filename, chunksize=1 << 13):
+		self.file_obj = file_obj
 		self.filename = filename
 		self.chunksize = chunksize
 		self.totalsize = os.path.getsize(filename)
@@ -26,26 +27,29 @@ class BitcasaUploader(object):
 		self.encoder = codecs.getencoder('utf-8')
 		self.boundary = uuid.uuid4().hex
 		self.content_type = 'multipart/form-data; boundary={}'.format(self.boundary)
+		# Print Debug
+		self.debug = True
 
 	def __iter__(self):
-		with open(self.filename, 'rb') as file:
-			# Start Multipart
-			form_header = str('--'+self.boundary+'\r\nContent-Disposition: form-data; name="file"; filename="'+self.filename+'"\r\nContent-Type: '+'application/octet-stream'+'\r\n\r\n').encode('utf-8')
-			yield form_header
-			self.time = time.time()
-			while True:
-				data = file.read(self.chunksize)
-				if not data:
-					total_time = time.time() - self.time
-					sys.stderr.write("\rFinished uploading file: " + self.filename + " (took "+ str(round(total_time,2)) +" seconds)\n")
-					# Finish Multipart
-					form_footer = str('\r\n--'+self.boundary+'--\r\n').encode('utf-8')
-					yield form_footer
-					break
-				self.readsofar += len(data)
-				percent = self.readsofar * 1e2 / self.totalsize
-				sys.stderr.write("\rUploading file: " + self.filename + " {percent:3.0f}%".format(percent=percent))
-				yield data
+		# Start Multipart
+		form_header = str('--'+self.boundary+'\r\nContent-Disposition: form-data; name="file"; filename="'+self.filename+'"\r\nContent-Type: '+'application/octet-stream'+'\r\n\r\n').encode('utf-8')
+		yield form_header
+		self.time = time.time()
+		while True:
+			data = self.file_obj.read(self.chunksize)
+			if not data:
+				total_time = time.time() - self.time
+				if(self.debug):
+					sys.stderr.write("\r[Bitcasa] Finished uploading file: " + self.filename + " (took "+ str(round(total_time,2)) +" seconds)\n")
+				# Finish Multipart
+				form_footer = str('\r\n--'+self.boundary+'--\r\n').encode('utf-8')
+				yield form_footer
+				break
+			self.readsofar += len(data)
+			percent = self.readsofar * 1e2 / self.totalsize
+			if(self.debug):
+				sys.stderr.write("\r[Bitcasa] Uploading file: " + self.filename + " {percent:3.0f}%".format(percent=percent))
+			yield data
 	
 	def __len__(self):
 		return self.totalsize
@@ -65,6 +69,7 @@ class BitcasaUploaderFileAdapter(object):
 class Bitcasa:
 	# URL "Constants"
 	bitcasa_api_url = "https://developer.api.bitcasa.com/v1"	
+	bitcasa_file_api_url = "https://files.api.bitcasa.com/v1"
 	oauth_redirect_url = ""
 	# API Auth/Access
 	api_oauth_token = ""
@@ -159,7 +164,7 @@ class Bitcasa:
 			else:
 				raise Exception(r.json()['error']['code'], r.json()['error']['message'])
 		else:
-			raise Exception(r.json['error']['code'], r.json['error']['message'])
+			raise Exception(r.json()['error']['code'], r.json()['error']['message'])
 
 	## Remove Folder
 	def rmdir(self, path):
@@ -177,7 +182,7 @@ class Bitcasa:
 			else:
 				raise Exception(r.json()['error']['code'], r.json()['error']['message'])
 		else:
-			raise Exception(r.json['error']['code'], r.json['error']['message'])
+			raise Exception(r.json()['error']['code'], r.json()['error']['message'])
 
 	## Rename Folder
 	def renamedir(self, path, new_name):
@@ -195,7 +200,7 @@ class Bitcasa:
 			else:
 				raise Exception(r.json()['error']['code'], r.json()['error']['message'])
 		else:
-			raise Exception(r.json['error']['code'], r.json['error']['message'])
+			raise Exception(r.json()['error']['code'], r.json()['error']['message'])
 
 	## Move Folder
 	def mvdir(self, path, new_path):
@@ -248,17 +253,53 @@ class Bitcasa:
 	### File Methods ###
 
 	## Download File
-	def read(self, path, file_id, file_name, file_size, stream=False):
-		return False
+	def download(self, file_path, file_id, file_name):
+		if(file_path != None):
+			if(self.debug):
+				print("[Bitcasa] Downloading file from path: " + file_path + " To Filename: " + file_name)
+				print("[Network] Request: " + self.bitcasa_api_url + "/files/" + file_name + "?access_token=" + self.api_access_token)
+			r = requests.get(self.bitcasa_api_url + "/files/" + file_name + "?access_token=" + self.api_access_token + "&path=" + file_path)
+		elif(file_id != None):
+			if(self.debug):
+				print("[Bitcasa] Downloading file with ID: " + file_id + " To Filename: " + file_name)
+				print("[Network] Request: " + self.bitcasa_api_url + "/files/" + file_id + "/" + file_name + "?access_token=" + self.api_access_token)
+			r = requests.get(self.bitcasa_api_url + "/files/" + file_id + "/" + file_name + "?access_token=" + self.api_access_token)
+		else:
+			raise Exception("You must specify a file path or a file ID.")		
+
+		if(r.status_code == 200):
+			# Make Sure Errors aren't here
+			try:
+				r.json()
+			except:			
+				return r.content
+			else:
+				raise Exception(r.json()['error']['code'], r.json()['error']['message'])
+		else:
+			raise Exception(r.json()['error']['code'], r.json()['error']['message'])
 	
 	## Upload File
 	# Please Bitcasa, make Uploads better (eh I suppose it works, but it'd be nice to have pause/resume support via chunked requests)
 	# Below is a memory efficient, multipart encoding beast.
-	# @todo - Maybe add option to send File object directly
-	# @todo - Fix content type detection
-	def write(self, path, file_path):
-		payload = BitcasaUploader(file_path, 8192)
+
+	def upload(self, file_obj, filename, file_path):
+		if(self.debug):
+			print("[Bitcasa]: Uploading file: " + filename + " to path:" + file_path)
+		# Request Payload (Multipart Encoding)
+		payload = BitcasaUploader(file_obj, filename, 8192)
+		# Request Headers
 		headers = {'Content-Type': payload.content_type, 'Content-Length': str(payload.totalsize)}
-		print(path)
-		r = requests.post(self.file_api_url + "/files"+path+"?access_token=" + self.access_token, data=payload, headers=headers);
-		print(r.text)
+		print(headers)
+		# Setup & Do Request
+		print("[Network] Request: " + self.bitcasa_api_url + "/files" + file_path + "?access_token=" + self.api_access_token)		
+		r = requests.post(self.bitcasa_file_api_url + "/files" + file_path + "?access_token=" + self.api_access_token, data=payload, headers=headers);
+		if(r.status_code == 200):
+			# Make Sure Errors aren't here
+			if(r.json()['error'] == None):
+				return r.json()['result']['items']
+			else:
+				raise Exception(r.json()['error']['code'], r.json()['error']['message'])
+		else:
+			raise Exception(r.json()['error']['code'], r.json()['error']['message'])
+
+		
