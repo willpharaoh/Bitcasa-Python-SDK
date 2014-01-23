@@ -1,14 +1,15 @@
-# Bitcasa List Directory Example *
+# Bitcasa List Directory Example #
 # 2013 Michael Thomas (Biscuit Labs) #
 
-from Bitcasa import Bitcasa
+# Get our Bitcasa Module
+from bitcasa import Bitcasa
 
-client = Bitcasa.Client('config.json')
-print("### Bitcasa List Directory Example ###")
+# Create an instance of the Bitcasa Class
+client = Bitcasa('APP_CLIENT_ID','APP_CLIENT_SECRET',True, None, 'ACCESS_TOKEN')
+
+# Get Root Directory Contents
 root_dir = client.dir();
-drive_path = ""
-print("### Printing Bitcasa Root Directory ###")
+
+# Print Results
 for files in root_dir:
 	print(files['name'] + " - " + files['path'])
-	if(files['name'] == "Bitcasa Infinite Drive"):
-		drive_path = files['path']

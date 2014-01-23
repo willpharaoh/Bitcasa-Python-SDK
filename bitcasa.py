@@ -15,6 +15,7 @@ import codecs, mimetypes, sys, uuid
 # from watchdog.events import LoggingEventHandler
 
 # Bitcasa Uploader Class
+# Works great for now, but Upload API changes soon.
 class BitcasaUploader(object):
 	def __init__(self, filename, chunksize=1 << 13):
 		self.filename = filename
@@ -60,98 +61,88 @@ class BitcasaUploaderFileAdapter(object):
 	def __len__(self):
 		return self.length
 		
-# Bitcasa Client
-class Client:
-	# Start Client & Load Config
-	def __init__ (self, config_path, verbose=False):
-		self.config_path = config_path
-		if(self.config_path != None):
-			# See if config.json is around.
-			# @todo - Defaults if the file isn't found
-			try:
-				with open(self.config_path, 'r') as config_file:
-					self.config = json.load(config_file)
-			except Exception as exc:
-				raise Exception("Could not find configuration file.")
-		else:
-			raise Exception("You must specify a config.json path.")
+# Bitcasa Main Class
+class Bitcasa:
+	# URL "Constants"
+	bitcasa_api_url = "https://developer.api.bitcasa.com/v1"	
+	oauth_redirect_url = ""
+	# API Auth/Access
+	api_oauth_token = ""
+	api_access_token = ""
 
-		# Set Class Variables
-		# Bitcasa API URL
-		self.api_url = self.config['api_url']
-		# Bitcasa File API URL (this may replace the above)
-		self.file_api_url = self.config['file_api_url']
-		# Application Client ID (Create in Bitcasa App Console)
-		self.client_id = self.config['client_id']
-		# Application Secret (Create in Bitcasa App Console)
-		self.secret = self.config['secret']
-		# Redirect URL - You can set to whatever, we just need the auth_token
-		self.redirect_url = self.config['redirect_url']
-		# Auth Token - Auth Token to get API Access Token
-		self.auth_token = self.config['auth_token']
-		# API Access Token
-		self.access_token = self.config['access_token']
-		# File Cache Support (if caching is enabled)
-		self.cache_dir = self.config['cache_dir']
-		# Verbosity
-		self.verbose = verbose
+	# Setup our class
+	def __init__ (self, app_client_id, app_client_secret, debug=False, auth_token=None, access_token=None):
+		# Make sure we atleast have a Client ID and/or Client Secret
+		self.app_client_id = app_client_id
+		self.app_client_secret = app_client_secret
+		if(self.app_client_id == None):
+			raise Exception("You must have a Bitcasa App Client ID to use this module.")
+		if(self.app_client_secret == None):
+			raise Exception("You must have a Bitcasa App Secret to use this module.")
+		# Set Auth Token and/or Access Token
+		self.api_oauth_token = auth_token
+		self.api_access_token = access_token
+		# Print out lots of useful info
+		self.debug = debug
 
-		# Check to see if we need to create a cache
-		if(self.cache_dir == None):
-			self.cache_dir = os.path.dirname(os.path.realpath(__file__)) + ".cache"
-			self.save_config()
-		# Make sure cache exists & create one if it doesn't
-		if not os.path.exists(self.cache_dir):
-			os.makedirs(self.cache_dir)
-		
-		# See if we need auth_token & access token.
-		if(self.auth_token == "") or (self.access_token == ""):
-			self.authenticate()
+	# Get OAuth URL to get Token
+	def oauth_url (self):
+		return self.bitcasa_api_url + "/oauth2/authenticate?client_id=" + self.app_client_id + "&redirect=" + self.oauth_redirect_url
 
-	# Write to configuration file
-	def save_config (self):
-		with open(self.config_path, 'w') as outfile:
-			json.dump(self.config, outfile, indent=4)
+	# Authenticate & Get Access Token
+	def authenticate (self, oauth=None):
+		# Set OAuth Token		
+		if(oauth != None):
+			self.oauth_token = oauth
+		if(self.debug):
+			print("[Bitcasa] Authenticate OAuth Token: " + self.oauth_token)
 
-	# Authenticate application & get tokens
-	def authenticate (self):
-		print("### ENTER THE FOLLOWING URL IN A BROWSER AND AUTHORIZE THIS APPLICATION ###")
-		print(self.api_url + "/oauth2/authenticate?client_id=" + self.client_id + "&redirect=" + self.redirect_url)
-		print("### ONCE YOU HAVE AUTHORIZED THE APPLICATION, ENTER THE AUTH TOKEN HERE (WILL BE IN URL) ###")
-		auth = input("Auth Token: ")
-		self.auth_token = auth
-		self.config['auth_token'] = self.auth_token
 		# Make Request for Access Token
-		r = requests.get(self.api_url + "/oauth2/access_token?secret=" + self.secret + "&code=" + self.auth_token)
+		r = requests.get(self.bitcasa_api_url + "/oauth2/access_token?secret=" + self.app_client_secret + "&code=" + self.oauth_token)
+		if(self.debug):
+			print("[Network] Request: " + self.bitcasa_api_url + "/oauth2/access_token?secret=" + self.app_client_secret + "&code=" + self.oauth_token)		
 		if(r.status_code == 200):
-			# Success
-			self.access_token = r.json()['result']['access_token']
-			self.config['access_token'] = self.access_token
-			self.save_config()
-		elif(r.status_code == 400):
-			# Authentication Error
-			raise Exception("Authentication Error")
+			# Success, set in instance & return
+			self.api_access_token = r.json()['result']['access_token']
+			return self.api_access_token
 		else:
-			# Other Error
-			raise Exception("A strange error has occurred. Derp.")
+			# Error
+			# @todo - Better HTTP/Requests Error Handling
+			raise Exception(r.json()['error']['code'], r.json()['error']['message'])
+	
+	# Get User Profile
+	def user_profile(self):
+		if(self.debug):
+			print("[Bitcasa] Fetch User Information")
+		# Make Request for User Profile
+		r = requests.get(self.bitcasa_api_url + "/user/profile?access_token=" + self.api_access_token)
+		if(self.debug):
+			print("[Network] Request: " + self.bitcasa_api_url + "/user/profile?access_token=" + self.api_access_token)		
+		if(r.status_code == 200):
+			# Success, return profile
+			return r.json()['result']
+		else:
+			# Error
+			# @todo - Better HTTP/Requests Error Handling
+			raise Exception(r.json()['error']['code'], r.json()['error']['message'])
 
 	### Folder Methods ###
 
 	## List Directory Contents
 	def dir (self, path = ""):
-		r = requests.get(self.api_url + "/folders/" + path + "?access_token=" + self.access_token)
-		if(self.verbose):
-			print("[Network] dir request: " + self.api_url + "/folders/" + path + "?access_token=" + self.access_token)
+		if(self.debug):
+			print("[Bitcasa] Listing Directory Contents: " + path)
+		r = requests.get(self.bitcasa_api_url + "/folders/" + path + "?access_token=" + self.api_access_token)
+		if(self.debug):
+			print("[Network] Request: " + self.bitcasa_api_url + "/folders/" + path + "?access_token=" + self.api_access_token)
 		if(r.status_code == 200):
 			# Success
 			contents = r.json()['result']['items']
 			return contents
-		elif(r.status_code == 400):
-			# Folder Not Found
-			raise Exception(r.json()['error']['code'], r.json()['error']['message'])
 		else:
-			# Other Error
-			raise Exception("A strange error has occurred. Derp.")
+			# Error
+			# @todo - Better HTTP/Requests Error Handling
+			raise Exception(r.json()['error']['code'], r.json()['error']['message'])
 
 	## Add Folder
 	def mkdir (self, path, folder_name):
