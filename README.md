@@ -16,9 +16,7 @@
 
 ### Installation & Requirements
 ##### The following has been tested on Ubuntu 13.04.
-1. Ensure you have Python 3 & Requests (http://docs.python-requests.org/)
-    2. On Ubuntu 13.04, you can accomplish this by doing:
-
-    ``` sudo apt-get install python3-pip && sudo pip3 install requests```
+1. Ensure you have Python 3 & Requests (http://docs.python-requests.org/). On Ubuntu 13.04, you can accomplish this by doing:
+	``` sudo apt-get install python3-pip && sudo pip3 install requests```
 2. Next, go to https://developer.bitcasa.com/ and get a Client Key and Client Secret from the Console.
 3. Download the SDK and play with the examples - they're commented decently and all work.
